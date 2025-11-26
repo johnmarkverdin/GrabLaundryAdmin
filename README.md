@@ -1,16 +1,137 @@
-# grablaundry_app_admin
+The Admin App is the control panel of the entire Laundry Management System.
+Admins can view all laundry orders, assign riders, update order status, set total price, view proof images, and delete completed orders.
 
-A new Flutter project.
+Built with Flutter + Supabase.
 
-## Getting Started
+✨ Admin Features
+📦 Manage All Orders
 
-This project is a starting point for a Flutter application.
+View all orders from all customers
 
-A few resources to get you started if this is your first Flutter project:
+Search by customer, rider, service, order ID, or address
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+Filter by status (pending, accepted, in_wash, completed, etc.)
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+Real-time updates from Supabase
+
+👤 Rider Assignment
+
+Load list of riders from profiles table where role = 'rider'
+
+Assign or change rider for any order
+
+Rider instantly sees new order in the Rider app
+
+🔄 Update Order Status
+
+Change status manually:
+
+pending
+
+accepted
+
+picked_up
+
+in_wash
+
+in_delivery
+
+completed
+
+cancelled
+
+🧾 Billing
+
+Admin can set or update total_price
+
+Customer will automatically see the updated bill in their app
+
+📷 Proof of Billing
+
+View uploaded proof image
+
+Opens in a modal popup
+
+🗑 Delete Completed Orders
+
+Delete order
+
+Confirmation dialog
+
+RLS allows only admin to delete
+
+🗄 Database Tables Used
+profiles
+
+Stores riders, customers, and admins
+Fields used in Admin:
+
+id
+
+full_name
+
+phone
+
+role
+
+laundry_orders
+
+Core order table
+Fields used:
+
+customer_id
+
+rider_id
+
+service
+
+payment_method
+
+pickup_address
+
+delivery_address
+
+schedule (pickup/delivery datetime)
+
+proof_of_billing_url
+
+status
+
+total_price
+
+🔐 Supabase Permissions (Admin)
+
+Admin is identified by:
+
+profiles.role = 'admin'
+
+
+Admin policies:
+
+create policy "admin_select_all_orders"
+on laundry_orders for select
+using (auth.uid() in (select id from profiles where role='admin'));
+
+create policy "admin_modify_all_orders"
+on laundry_orders for all
+using (auth.uid() in (select id from profiles where role='admin'))
+with check (auth.uid() in (select id from profiles where role='admin'));
+
+▶️ How to Run Admin App
+1. Install Flutter packages
+   flutter pub get
+
+2. Add Supabase Credentials
+
+Inside lib/supabase_config.dart:
+
+await Supabase.initialize(
+url: "https://<YOUR-PROJECT>.supabase.co",
+anonKey: "<YOUR-ANON-KEY>",
+);
+
+3. Run the app
+   flutter run
+
+
+Admin dashboard will load.
