@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'supabase_config.dart';
 import 'pages/auth_admin_page.dart';
 import 'pages/admin_home_page.dart';
+import 'splash_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -28,6 +29,7 @@ class _AdminAppState extends State<AdminApp> {
 
     // listen to login / logout
     Supabase.instance.client.auth.onAuthStateChange.listen((event) {
+      if (!mounted) return;
       setState(() {
         _loggedIn = event.session != null;
       });
@@ -54,8 +56,20 @@ class _AdminAppState extends State<AdminApp> {
 
     return MaterialApp(
       title: 'GrabLaundry Admin',
-      theme: ThemeData(primarySwatch: Colors.deepPurple),
-      home: _loggedIn ? const AdminHomePage() : const AdminAuthPage(),
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF4F46E5)),
+        scaffoldBackgroundColor: const Color(0xFFE5E7EB),
+        useMaterial3: true,
+        appBarTheme: const AppBarTheme(
+          elevation: 0,
+          centerTitle: true,
+          foregroundColor: Colors.white,
+          backgroundColor: Colors.transparent,
+        ),
+      ),
+      // ✅ if logged in -> AdminHomePage, else -> AdminAuthPage
+      home: AnimatedSplashScreen(nextScreen: _loggedIn ? AdminHomePage() : const AdminAuthPage()),
     );
   }
 }

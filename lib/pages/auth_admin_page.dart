@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:shared_preferences/shared_preferences.dart'; // 👈 ADD
+import 'package:shared_preferences/shared_preferences.dart';
 import '../supabase_config.dart';
 import '../pages/admin_home_page.dart';
 
@@ -20,17 +20,14 @@ class _AdminAuthPageState extends State<AdminAuthPage> {
   bool _isSignUp = false;
   bool _loading = false;
   bool _showPassword = false;
-
-  // 👇 ADD: remember me flag
   bool _rememberMe = false;
 
   @override
   void initState() {
     super.initState();
-    _loadRememberedAdmin(); // 👈 ADD
+    _loadRememberedAdmin();
   }
 
-  // 👇 ADD: load saved preference + email, optionally auto-continue
   Future<void> _loadRememberedAdmin() async {
     final prefs = await SharedPreferences.getInstance();
     final remember = prefs.getBool('admin_remember_me') ?? false;
@@ -105,7 +102,6 @@ class _AdminAuthPageState extends State<AdminAuthPage> {
         );
 
         if (res.session != null) {
-          // 👇 ADD: save / clear remember-me preference
           final prefs = await SharedPreferences.getInstance();
           if (_rememberMe) {
             await prefs.setBool('admin_remember_me', true);
@@ -142,40 +138,23 @@ class _AdminAuthPageState extends State<AdminAuthPage> {
     final title = _isSignUp ? 'Admin Sign Up' : 'Admin Sign In';
 
     return Scaffold(
-      // keep app bar but make it nicer
       appBar: AppBar(
-        elevation: 0,
-        centerTitle: true,
-        foregroundColor: Colors.white,
-        backgroundColor: Colors.transparent,
         flexibleSpace: Container(
           decoration: const BoxDecoration(
             gradient: LinearGradient(
-              colors: [
-                Color(0xFF4F46E5),
-                Color(0xFF6366F1),
-                Color(0xFF0EA5E9),
-              ],
+              colors: [Color(0xFF4F46E5), Color(0xFF6366F1), Color(0xFF0EA5E9)],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
           ),
         ),
-        title: Text(
-          title,
-          style: const TextStyle(
-            fontWeight: FontWeight.w600,
-          ),
-        ),
+        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
       ),
       backgroundColor: const Color(0xFFE5E7EB),
       body: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
-            colors: [
-              Color(0xFFE5E7EB),
-              Color(0xFFE0F2FE),
-            ],
+            colors: [Color(0xFFE5E7EB), Color(0xFFE0F2FE)],
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
           ),
@@ -187,76 +166,76 @@ class _AdminAuthPageState extends State<AdminAuthPage> {
               constraints: const BoxConstraints(maxWidth: 420),
               child: Card(
                 elevation: 10,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(20),
-                ),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                 child: Padding(
-                  padding:
-                  const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      // Top icon + title
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFEEF2FF),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(
-                          Icons.admin_panel_settings_rounded,
-                          size: 32,
-                          color: Color(0xFF4F46E5),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        'Laundry Admin Portal',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.grey.shade900,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        _isSignUp
-                            ? 'Create an admin account to manage orders.'
-                            : 'Sign in to manage customers, riders, and orders.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Colors.grey.shade600,
-                        ),
+                      // ✅ Logo + product name (Hero for smooth transition)
+                      Column(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFEEF2FF),
+                              shape: BoxShape.circle,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.05),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 3),
+                                ),
+                              ],
+                            ),
+                            child: Hero(
+                              tag: 'app_logo',
+                              child: ClipOval(
+                                child: Image.asset(
+                                  'assets/logo.png',
+                                  height: 52,
+                                  width: 52,
+                                  fit: BoxFit.cover,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            'Laundry Admin Portal',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.grey.shade900,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            _isSignUp
+                                ? 'Create an admin account to manage orders.'
+                                : 'Sign in to manage customers, riders, and orders.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 20),
 
-                      // FORM
                       if (_isSignUp) ...[
                         TextField(
                           controller: _nameCtl,
-                          decoration: InputDecoration(
+                          decoration: const InputDecoration(
                             labelText: 'Full Name',
-                            prefixIcon: const Icon(Icons.person_outline),
-                            filled: true,
-                            fillColor: const Color(0xFFF9FAFB),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
+                            prefixIcon: Icon(Icons.person_outline),
                           ),
                         ),
                         const SizedBox(height: 10),
                         TextField(
                           controller: _phoneCtl,
                           keyboardType: TextInputType.phone,
-                          decoration: InputDecoration(
+                          decoration: const InputDecoration(
                             labelText: 'Phone',
-                            prefixIcon: const Icon(Icons.phone_outlined),
-                            filled: true,
-                            fillColor: const Color(0xFFF9FAFB),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
+                            prefixIcon: Icon(Icons.phone_outlined),
                           ),
                         ),
                         const SizedBox(height: 10),
@@ -264,14 +243,9 @@ class _AdminAuthPageState extends State<AdminAuthPage> {
                       TextField(
                         controller: _emailCtl,
                         keyboardType: TextInputType.emailAddress,
-                        decoration: InputDecoration(
+                        decoration: const InputDecoration(
                           labelText: 'Email',
-                          prefixIcon: const Icon(Icons.email_outlined),
-                          filled: true,
-                          fillColor: const Color(0xFFF9FAFB),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
+                          prefixIcon: Icon(Icons.email_outlined),
                         ),
                       ),
                       const SizedBox(height: 10),
@@ -281,50 +255,29 @@ class _AdminAuthPageState extends State<AdminAuthPage> {
                         decoration: InputDecoration(
                           labelText: 'Password',
                           prefixIcon: const Icon(Icons.lock_outline),
-                          filled: true,
-                          fillColor: const Color(0xFFF9FAFB),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
                           suffixIcon: IconButton(
-                            icon: Icon(
-                              _showPassword
-                                  ? Icons.visibility
-                                  : Icons.visibility_off,
-                            ),
-                            onPressed: () {
-                              setState(() => _showPassword = !_showPassword);
-                            },
+                            icon: Icon(_showPassword ? Icons.visibility : Icons.visibility_off),
+                            onPressed: () => setState(() => _showPassword = !_showPassword),
                           ),
                         ),
                       ),
-
-                      // 👇 ADD: Remember me only on Sign In
                       if (!_isSignUp) ...[
                         const SizedBox(height: 8),
                         Row(
                           children: [
                             Checkbox(
                               value: _rememberMe,
-                              onChanged: (val) {
-                                setState(() {
-                                  _rememberMe = val ?? false;
-                                });
-                              },
+                              onChanged: (val) => setState(() => _rememberMe = val ?? false),
                               activeColor: const Color(0xFF4F46E5),
                             ),
                             const SizedBox(width: 4),
                             const Text(
                               'Remember me',
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: Color(0xFF4B5563),
-                              ),
+                              style: TextStyle(fontSize: 13, color: Color(0xFF4B5563)),
                             ),
                           ],
                         ),
                       ],
-
                       const SizedBox(height: 18),
 
                       _loading
@@ -337,8 +290,7 @@ class _AdminAuthPageState extends State<AdminAuthPage> {
                         child: ElevatedButton(
                           onPressed: _auth,
                           style: ElevatedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(
-                                vertical: 12),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
                             backgroundColor: const Color(0xFF4F46E5),
                             foregroundColor: Colors.white,
                             shape: RoundedRectangleBorder(
@@ -346,19 +298,14 @@ class _AdminAuthPageState extends State<AdminAuthPage> {
                             ),
                           ),
                           child: Text(
-                            _isSignUp
-                                ? 'Create Admin Account'
-                                : 'Sign In',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w600,
-                            ),
+                            _isSignUp ? 'Create Admin Account' : 'Sign In',
+                            style: const TextStyle(fontWeight: FontWeight.w600),
                           ),
                         ),
                       ),
                       const SizedBox(height: 8),
                       TextButton(
-                        onPressed: () =>
-                            setState(() => _isSignUp = !_isSignUp),
+                        onPressed: () => setState(() => _isSignUp = !_isSignUp),
                         child: Text(
                           _isSignUp
                               ? 'Already have an account? Sign In'

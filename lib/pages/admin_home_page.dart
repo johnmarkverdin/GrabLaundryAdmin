@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart'; // 👈 for remember-me clear
 import '../supabase_config.dart';
+import 'auth_admin_page.dart'; // 👈 to navigate back to login
+import 'admin_price_list_page.dart'; // 👈 NEW: admin price list page
 
 class AdminHomePage extends StatefulWidget {
   const AdminHomePage({super.key});
@@ -20,8 +23,8 @@ class _AdminHomePageState extends State<AdminHomePage> {
   String? _selectedRiderIdForEdit; // stores rider UUID or "unassigned"
   String? _selectedStatusForEdit;
 
-  // 👇 NEW: total price controller for editing
   final TextEditingController _totalPriceController = TextEditingController();
+  final TextEditingController _deliveryFeeController = TextEditingController();
 
   final List<String> _statusOptions = const [
     'all',
@@ -45,11 +48,11 @@ class _AdminHomePageState extends State<AdminHomePage> {
   void dispose() {
     _searchCtl.dispose();
     _totalPriceController.dispose();
+    _deliveryFeeController.dispose();
     super.dispose();
   }
 
   // ---------- RIDERS ----------
-
   Future<void> _loadRiders() async {
     try {
       final res = await supabase
@@ -73,20 +76,17 @@ class _AdminHomePageState extends State<AdminHomePage> {
   }
 
   // ---------- ORDERS ----------
-
   Future<void> _loadOrders() async {
     setState(() => _loading = true);
     try {
-      // ADMIN: load ALL orders with joined customer + proof url + total_price
       final res = await supabase
           .from('laundry_orders')
           .select('''
             id,
             customer_id,
-            customer:profiles!laundry_orders_customer_id_fkey (
-              full_name
-            ),
+            customer:profiles!laundry_orders_customer_id_fkey ( full_name ),
             rider_id,
+            rider:profiles!laundry_orders_rider_id_fkey ( full_name ),
             pickup_address,
             delivery_address,
             service,
@@ -95,8 +95,10 @@ class _AdminHomePageState extends State<AdminHomePage> {
             pickup_at,
             delivery_at,
             total_price,
-            proof_of_billing_url
-          ''')
+            delivery_fee,
+            proof_of_billing_url,
+            notes
+          ''') // 👈 added notes
           .order('created_at', ascending: false);
 
       setState(() {
@@ -110,7 +112,6 @@ class _AdminHomePageState extends State<AdminHomePage> {
   }
 
   // ---------- EDIT ----------
-
   void _startEdit(Map<String, dynamic> order) {
     setState(() {
       _editingOrderId = order['id'].toString();
@@ -119,10 +120,12 @@ class _AdminHomePageState extends State<AdminHomePage> {
       riderId == null ? 'unassigned' : riderId.toString();
       _selectedStatusForEdit = order['status']?.toString() ?? 'pending';
 
-      // 👇 load existing total_price into text field
       final total = order['total_price'];
-      _totalPriceController.text =
-      total == null ? '' : total.toString(); // keep raw for now
+      _totalPriceController.text = total == null ? '' : total.toString();
+
+      final delivering = order['delivery_fee'];
+      _deliveryFeeController.text =
+      delivering == null ? '' : delivering.toString();
     });
   }
 
@@ -131,20 +134,18 @@ class _AdminHomePageState extends State<AdminHomePage> {
 
     final updateData = <String, dynamic>{};
 
-    // Rider
     if (_selectedRiderIdForEdit == 'unassigned') {
       updateData['rider_id'] = null;
     } else if (_selectedRiderIdForEdit != null &&
         _selectedRiderIdForEdit!.isNotEmpty) {
-      updateData['rider_id'] = _selectedRiderIdForEdit; // UUID from profiles.id
+      updateData['rider_id'] = _selectedRiderIdForEdit;
     }
 
-    // Status
-    if (_selectedStatusForEdit != null && _selectedStatusForEdit!.isNotEmpty) {
+    if (_selectedStatusForEdit != null &&
+        _selectedStatusForEdit!.isNotEmpty) {
       updateData['status'] = _selectedStatusForEdit;
     }
 
-    // 👇 NEW: Total price (admin can manually set it)
     final totalText = _totalPriceController.text.trim();
     if (totalText.isNotEmpty) {
       final parsed = num.tryParse(totalText);
@@ -153,6 +154,16 @@ class _AdminHomePageState extends State<AdminHomePage> {
         return;
       }
       updateData['total_price'] = parsed;
+    }
+
+    final shippingText = _deliveryFeeController.text.trim();
+    if (shippingText.isNotEmpty) {
+      final parsed = num.tryParse(shippingText);
+      if (parsed == null) {
+        _snack('Invalid delivery fee. Use numbers only (e.g. 50 or 75.00).');
+        return;
+      }
+      updateData['delivery_fee'] = parsed;
     }
 
     if (updateData.isEmpty) {
@@ -172,6 +183,7 @@ class _AdminHomePageState extends State<AdminHomePage> {
         _selectedRiderIdForEdit = null;
         _selectedStatusForEdit = null;
         _totalPriceController.clear();
+        _deliveryFeeController.clear();
       });
 
       await _loadOrders();
@@ -184,7 +196,6 @@ class _AdminHomePageState extends State<AdminHomePage> {
   }
 
   // ---------- DELETE ----------
-
   Future<void> _deleteOrder(String orderId) async {
     final confirm = await showDialog<bool>(
       context: context,
@@ -218,7 +229,6 @@ class _AdminHomePageState extends State<AdminHomePage> {
     setState(() => _loading = true);
     try {
       await supabase.from('laundry_orders').delete().eq('id', orderId);
-
       _snack('Order deleted.');
       await _loadOrders();
     } catch (e) {
@@ -229,15 +239,32 @@ class _AdminHomePageState extends State<AdminHomePage> {
   }
 
   // ---------- HELPERS ----------
-
   Future<void> _logout() async {
-    await supabase.auth.signOut();
-    if (!mounted) return;
-    Navigator.pop(context);
+    try {
+      // Clear remember-me for admin
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('admin_remember_me');
+      await prefs.remove('admin_email');
+
+      // Sign out from Supabase
+      await supabase.auth.signOut();
+
+      if (!mounted) return;
+
+      // Go back to AdminAuthPage and clear navigation stack
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (_) => const AdminAuthPage()),
+            (route) => false,
+      );
+    } catch (e) {
+      _snack('Error signing out: $e');
+    }
   }
 
   void _snack(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(msg)));
   }
 
   int _countByStatus(String status) {
@@ -260,19 +287,19 @@ class _AdminHomePageState extends State<AdminHomePage> {
     showDialog(
       context: context,
       builder: (ctx) => Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             ClipRRect(
-              borderRadius:
-              const BorderRadius.vertical(top: Radius.circular(16)),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(16),
+              ),
               child: AspectRatio(
                 aspectRatio: 3 / 4,
-                child: Image.network(
-                  url,
-                  fit: BoxFit.contain,
-                ),
+                child: Image.network(url, fit: BoxFit.contain),
               ),
             ),
             const SizedBox(height: 8),
@@ -306,18 +333,15 @@ class _AdminHomePageState extends State<AdminHomePage> {
     }
   }
 
-  String _prettyStatus(String status) {
-    return status.replaceAll('_', ' ').toUpperCase();
-  }
+  String _prettyStatus(String status) =>
+      status.replaceAll('_', ' ').toUpperCase();
 
   // ---------- UI ----------
-
   @override
   Widget build(BuildContext context) {
     final loader = _loading
         ? const LinearProgressIndicator(minHeight: 2)
         : const SizedBox.shrink();
-
     final primaryTextColor = Colors.grey.shade900;
     final secondaryTextColor = Colors.grey.shade600;
 
@@ -331,11 +355,12 @@ class _AdminHomePageState extends State<AdminHomePage> {
       final customer = o['customer'] as Map<String, dynamic>?;
       final customerName = customer?['full_name'];
 
+      final rider = o['rider'] as Map<String, dynamic>?;
+      final riderName = rider?['full_name'];
+
       final combined = [
-        o['id'],
-        o['customer_id'],
         customerName,
-        o['rider_id'],
+        riderName,
         o['pickup_address'],
         o['delivery_address'],
         o['service'],
@@ -351,11 +376,41 @@ class _AdminHomePageState extends State<AdminHomePage> {
         backgroundColor: const Color(0xFF4F46E5),
         foregroundColor: Colors.white,
         centerTitle: false,
-        title: const Text(
-          'Admin Dashboard',
-          style: TextStyle(
-            fontWeight: FontWeight.w600,
-          ),
+        titleSpacing: 8,
+        title: Row(
+          children: [
+            Hero(
+              tag: 'app_logo',
+              child: ClipOval(
+                child: Image.asset(
+                  'assets/logo.png',
+                  height: 32,
+                  width: 32,
+                  fit: BoxFit.cover,
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            const Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Laundry Admin',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 16,
+                  ),
+                ),
+                Text(
+                  'Dashboard',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Color(0xFFE5E7EB),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ),
         actions: [
           IconButton(
@@ -365,6 +420,19 @@ class _AdminHomePageState extends State<AdminHomePage> {
             },
             icon: const Icon(Icons.refresh),
             tooltip: 'Reload',
+          ),
+          // 👇 NEW: Price List admin button
+          IconButton(
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const PriceListPage(),
+                ),
+              );
+            },
+            icon: const Icon(Icons.list_alt),
+            tooltip: 'Manage Price List',
           ),
           IconButton(
             onPressed: _logout,
@@ -394,7 +462,11 @@ class _AdminHomePageState extends State<AdminHomePage> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                Row(
+
+                // ✅ Wrap instead of Row for the stat chips
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
                   children: [
                     _StatChip(
                       label: 'All',
@@ -402,14 +474,12 @@ class _AdminHomePageState extends State<AdminHomePage> {
                       color: Colors.indigo.shade50,
                       textColor: Colors.indigo.shade700,
                     ),
-                    const SizedBox(width: 8),
                     _StatChip(
                       label: 'Pending',
                       value: _countByStatus('pending'),
                       color: Colors.amber.shade50,
                       textColor: Colors.amber.shade800,
                     ),
-                    const SizedBox(width: 8),
                     _StatChip(
                       label: 'Completed',
                       value: _countByStatus('completed'),
@@ -418,62 +488,127 @@ class _AdminHomePageState extends State<AdminHomePage> {
                     ),
                   ],
                 ),
+
                 const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      flex: 2,
-                      child: DropdownButtonFormField<String>(
-                        value: _statusFilter,
-                        items: _statusOptions
-                            .map(
-                              (s) => DropdownMenuItem(
-                            value: s,
-                            child: Text(
-                              s == 'all'
-                                  ? 'All statuses'
-                                  : s.replaceAll('_', ' '),
+
+                // ✅ Responsive filter/search: avoids overflow on small screens
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final isNarrow = constraints.maxWidth < 380;
+
+                    if (isNarrow) {
+                      // stack vertically
+                      return Column(
+                        children: [
+                          DropdownButtonFormField<String>(
+                            value: _statusFilter,
+                            items: _statusOptions
+                                .map(
+                                  (s) => DropdownMenuItem(
+                                value: s,
+                                child: Text(
+                                  s == 'all'
+                                      ? 'All statuses'
+                                      : s.replaceAll('_', ' '),
+                                ),
+                              ),
+                            )
+                                .toList(),
+                            onChanged: (v) {
+                              if (v == null) return;
+                              setState(() => _statusFilter = v);
+                            },
+                            decoration: const InputDecoration(
+                              labelText: 'Filter by status',
+                              isDense: true,
+                              border: OutlineInputBorder(),
                             ),
                           ),
-                        )
-                            .toList(),
-                        onChanged: (v) {
-                          if (v == null) return;
-                          setState(() => _statusFilter = v);
-                        },
-                        decoration: const InputDecoration(
-                          labelText: 'Filter by status',
-                          isDense: true,
-                          border: OutlineInputBorder(),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      flex: 3,
-                      child: TextField(
-                        controller: _searchCtl,
-                        onChanged: (_) => setState(() {}),
-                        decoration: InputDecoration(
-                          labelText: 'Search orders, customers, riders',
-                          prefixIcon: const Icon(Icons.search),
-                          isDense: true,
-                          filled: true,
-                          fillColor: Colors.white,
-                          border: const OutlineInputBorder(),
-                          suffixIcon: _searchCtl.text.isNotEmpty
-                              ? IconButton(
-                            icon: const Icon(Icons.clear),
-                            onPressed: () {
-                              _searchCtl.clear();
-                              setState(() {});
+                          const SizedBox(height: 8),
+                          TextField(
+                            controller: _searchCtl,
+                            onChanged: (_) => setState(() {}),
+                            decoration: InputDecoration(
+                              labelText:
+                              'Search customers, riders, address',
+                              prefixIcon: const Icon(Icons.search),
+                              isDense: true,
+                              filled: true,
+                              fillColor: Colors.white,
+                              border: const OutlineInputBorder(),
+                              suffixIcon: _searchCtl.text.isNotEmpty
+                                  ? IconButton(
+                                icon: const Icon(Icons.clear),
+                                onPressed: () {
+                                  _searchCtl.clear();
+                                  setState(() {});
+                                },
+                              )
+                                  : null,
+                            ),
+                          ),
+                        ],
+                      );
+                    }
+
+                    // wide enough: row layout
+                    return Row(
+                      children: [
+                        SizedBox(
+                          width: 170,
+                          child: DropdownButtonFormField<String>(
+                            value: _statusFilter,
+                            items: _statusOptions
+                                .map(
+                                  (s) => DropdownMenuItem(
+                                value: s,
+                                child: Text(
+                                  s == 'all'
+                                      ? 'All statuses'
+                                      : s.replaceAll('_', ' '),
+                                ),
+                              ),
+                            )
+                                .toList(),
+                            onChanged: (v) {
+                              if (v == null) return;
+                              setState(() => _statusFilter = v);
                             },
-                          )
-                              : null,
+                            decoration: const InputDecoration(
+                              labelText: 'Filter by status',
+                              isDense: true,
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
                         ),
-                      ),
-                    ),
-                  ],
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: TextField(
+                            controller: _searchCtl,
+                            onChanged: (_) => setState(() {}),
+                            decoration: InputDecoration(
+                              labelText:
+                              'Search customers, riders, address',
+                              prefixIcon: const Icon(Icons.search),
+                              isDense: true,
+                              filled: true,
+                              fillColor: Colors.white,
+                              border: const OutlineInputBorder(),
+                              suffixIcon: _searchCtl.text.isNotEmpty
+                                  ? IconButton(
+                                icon: const Icon(Icons.clear),
+                                onPressed: () {
+                                  _searchCtl.clear();
+                                  setState(() {});
+                                },
+                              )
+                                  : null,
+                            ),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
                 ),
               ],
             ),
@@ -525,6 +660,10 @@ class _AdminHomePageState extends State<AdminHomePage> {
                   o['customer'] as Map<String, dynamic>?;
                   final customerName =
                       customer?['full_name'] ?? o['customer_id'];
+                  final rider =
+                  o['rider'] as Map<String, dynamic>?;
+                  final riderName =
+                      rider?['full_name'] ?? 'Unassigned';
 
                   final status = (o['status'] ?? '').toString();
                   final orderId = o['id'].toString();
@@ -532,6 +671,8 @@ class _AdminHomePageState extends State<AdminHomePage> {
                   o['proof_of_billing_url'] as String?;
                   final badgeColor = _statusBadgeColor(status);
                   final totalPrice = o['total_price'];
+                  final deliveryFee = o['delivery_fee'];
+                  final notes = o['notes']?.toString().trim() ?? '';
 
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 12),
@@ -553,9 +694,10 @@ class _AdminHomePageState extends State<AdminHomePage> {
                       child: Padding(
                         padding: const EdgeInsets.all(14),
                         child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                          crossAxisAlignment:
+                          CrossAxisAlignment.start,
                           children: [
-                            // Header row
+                            // header row
                             Row(
                               crossAxisAlignment:
                               CrossAxisAlignment.start,
@@ -566,32 +708,28 @@ class _AdminHomePageState extends State<AdminHomePage> {
                                     CrossAxisAlignment.start,
                                     children: [
                                       Text(
-                                        'Order #$orderId',
+                                        customerName.toString(),
                                         style: TextStyle(
                                           fontSize: 15,
-                                          fontWeight: FontWeight.w700,
+                                          fontWeight:
+                                          FontWeight.w700,
                                           color: primaryTextColor,
                                         ),
-                                      ),
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        'Customer: $customerName',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: secondaryTextColor,
-                                        ),
+                                        overflow:
+                                        TextOverflow.ellipsis,
                                       ),
                                     ],
                                   ),
                                 ),
                                 Container(
-                                  padding: const EdgeInsets.symmetric(
+                                  padding:
+                                  const EdgeInsets.symmetric(
                                     horizontal: 10,
                                     vertical: 4,
                                   ),
                                   decoration: BoxDecoration(
-                                    color:
-                                    badgeColor.withOpacity(0.12),
+                                    color: badgeColor
+                                        .withOpacity(0.12),
                                     borderRadius:
                                     BorderRadius.circular(20),
                                   ),
@@ -608,7 +746,7 @@ class _AdminHomePageState extends State<AdminHomePage> {
                             ),
                             const SizedBox(height: 10),
 
-                            // Addresses
+                            // addresses
                             Row(
                               crossAxisAlignment:
                               CrossAxisAlignment.start,
@@ -660,7 +798,7 @@ class _AdminHomePageState extends State<AdminHomePage> {
                             ),
                             const SizedBox(height: 8),
 
-                            // Service, payment, rider, total
+                            // details
                             Row(
                               crossAxisAlignment:
                               CrossAxisAlignment.start,
@@ -675,7 +813,8 @@ class _AdminHomePageState extends State<AdminHomePage> {
                                           'Service',
                                           style: TextStyle(
                                             fontSize: 11,
-                                            color: secondaryTextColor,
+                                            color:
+                                            secondaryTextColor,
                                           ),
                                         ),
                                         Text(
@@ -692,7 +831,8 @@ class _AdminHomePageState extends State<AdminHomePage> {
                                           'Payment Method',
                                           style: TextStyle(
                                             fontSize: 11,
-                                            color: secondaryTextColor,
+                                            color:
+                                            secondaryTextColor,
                                           ),
                                         ),
                                         Text(
@@ -704,7 +844,25 @@ class _AdminHomePageState extends State<AdminHomePage> {
                                         ),
                                         const SizedBox(height: 6),
                                       ],
-                                      // 👇 NEW: show total price
+                                      if (notes.isNotEmpty) ...[
+                                        Text(
+                                          'Notes',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color:
+                                            secondaryTextColor,
+                                          ),
+                                        ),
+                                        Text(
+                                          notes,
+                                          style: const TextStyle(
+                                            fontSize: 13,
+                                            fontStyle:
+                                            FontStyle.italic,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 6),
+                                      ],
                                       Text(
                                         'Total Bill',
                                         style: TextStyle(
@@ -718,7 +876,26 @@ class _AdminHomePageState extends State<AdminHomePage> {
                                             : '₱$totalPrice',
                                         style: const TextStyle(
                                           fontSize: 13,
-                                          fontWeight: FontWeight.w600,
+                                          fontWeight:
+                                          FontWeight.w600,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        'Delivery Fee',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: secondaryTextColor,
+                                        ),
+                                      ),
+                                      Text(
+                                        deliveryFee == null
+                                            ? '₱0'
+                                            : '₱$deliveryFee',
+                                        style: const TextStyle(
+                                          fontSize: 13,
+                                          fontWeight:
+                                          FontWeight.w500,
                                         ),
                                       ),
                                     ],
@@ -738,11 +915,12 @@ class _AdminHomePageState extends State<AdminHomePage> {
                                         ),
                                       ),
                                       Text(
-                                        o['rider_id']?.toString() ??
-                                            'Unassigned',
+                                        riderName,
                                         style: const TextStyle(
                                           fontSize: 13,
                                         ),
+                                        overflow:
+                                        TextOverflow.ellipsis,
                                       ),
                                       const SizedBox(height: 6),
                                       Text(
@@ -795,7 +973,8 @@ class _AdminHomePageState extends State<AdminHomePage> {
 
                             const SizedBox(height: 4),
                             const Divider(height: 16),
-                            // Action buttons
+
+                            // actions
                             Row(
                               mainAxisAlignment:
                               MainAxisAlignment.spaceBetween,
@@ -810,7 +989,8 @@ class _AdminHomePageState extends State<AdminHomePage> {
                                   label: Text(
                                     'Edit',
                                     style: TextStyle(
-                                      color: Colors.indigo.shade600,
+                                      color:
+                                      Colors.indigo.shade600,
                                     ),
                                   ),
                                 ),
@@ -824,7 +1004,8 @@ class _AdminHomePageState extends State<AdminHomePage> {
                                   ),
                                   label: const Text(
                                     'Delete',
-                                    style: TextStyle(color: Colors.red),
+                                    style: TextStyle(
+                                        color: Colors.red),
                                   ),
                                 ),
                               ],
@@ -869,7 +1050,7 @@ class _AdminHomePageState extends State<AdminHomePage> {
                       ),
                       const SizedBox(width: 8),
                       Text(
-                        'Edit Order: $_editingOrderId',
+                        'Edit Order',
                         style: TextStyle(
                           fontWeight: FontWeight.w600,
                           color: primaryTextColor,
@@ -884,6 +1065,7 @@ class _AdminHomePageState extends State<AdminHomePage> {
                             _selectedRiderIdForEdit = null;
                             _selectedStatusForEdit = null;
                             _totalPriceController.clear();
+                            _deliveryFeeController.clear();
                           });
                         },
                       ),
@@ -945,8 +1127,6 @@ class _AdminHomePageState extends State<AdminHomePage> {
                   ),
 
                   const SizedBox(height: 8),
-
-                  // 👇 NEW: Total price field
                   TextField(
                     controller: _totalPriceController,
                     keyboardType:
@@ -955,6 +1135,18 @@ class _AdminHomePageState extends State<AdminHomePage> {
                       labelText: 'Total Bill (₱)',
                       border: OutlineInputBorder(),
                       hintText: 'e.g. 250 or 250.50',
+                    ),
+                  ),
+
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _deliveryFeeController,
+                    keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(
+                      labelText: 'delivery_fee (₱)',
+                      border: OutlineInputBorder(),
+                      hintText: 'e.g. 50 or 75.00',
                     ),
                   ),
 
@@ -979,6 +1171,7 @@ class _AdminHomePageState extends State<AdminHomePage> {
                             _selectedRiderIdForEdit = null;
                             _selectedStatusForEdit = null;
                             _totalPriceController.clear();
+                            _deliveryFeeController.clear();
                           });
                         },
                         child: const Text('Cancel'),
@@ -1010,13 +1203,12 @@ class _StatChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding:
+      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         color: color,
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(
-          color: textColor.withOpacity(0.2),
-        ),
+        border: Border.all(color: textColor.withOpacity(0.2)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -1031,7 +1223,8 @@ class _StatChip extends StatelessWidget {
           ),
           const SizedBox(width: 6),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            padding: const EdgeInsets.symmetric(
+                horizontal: 6, vertical: 2),
             decoration: BoxDecoration(
               color: textColor.withOpacity(0.12),
               borderRadius: BorderRadius.circular(999),
