@@ -1,0 +1,6 @@
+[build]
+  command = "bash ./flutter_installer.sh && ./flutter/bin/flutter build web --release"
+  publish = "build/web"
+
+[build.environment]
+  NODE_VERSION = "18"
